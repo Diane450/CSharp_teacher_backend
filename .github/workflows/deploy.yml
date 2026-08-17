@@ -1,0 +1,31 @@
+name: Deploy ASP.NET Core 8 Backend
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Deploy to TEST
+        if: github.ref == 'refs/heads/develop'
+        run: |
+          echo "Building backend for TEST..."
+          docker build -t backend-test:latest .
+          cd /opt/platform/test
+          docker compose up -d backend-test
+
+      - name: Deploy to PROD
+        if: github.ref == 'refs/heads/main'
+        run: |
+          echo "Building backend for PROD..."
+          docker build -t backend-prod:latest .
+          cd /opt/platform/prod
+          docker compose up -d backend-prod
