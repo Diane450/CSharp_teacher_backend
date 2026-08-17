@@ -1,4 +1,4 @@
-using CSharp_teacher.Data;
+п»їusing CSharp_teacher.Data;
 using CSharp_teacher.DTO;
 using CSharp_teacher.Models;
 using CSharp_teacher.Requests;
@@ -46,7 +46,7 @@ namespace CSharp_teacher.Controllers
                 return BadRequest(result.Errors);
             }
 
-            return Ok(new { message = "Пользователь успешно зарегистрирован!" });
+            return Ok(new { message = "РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ СѓСЃРїРµС€РЅРѕ Р·Р°СЂРµРіРёСЃС‚СЂРёСЂРѕРІР°РЅ!" });
         }
 
         [HttpPost("login")]
@@ -55,13 +55,13 @@ namespace CSharp_teacher.Controllers
             var user = await _userManager.FindByEmailAsync(request.Email);
             if (user == null)
             {
-                return Unauthorized(new { message = "Неверная почта или пароль" });
+                return Unauthorized(new { message = "РќРµРІРµСЂРЅР°СЏ РїРѕС‡С‚Р° РёР»Рё РїР°СЂРѕР»СЊ" });
             }
             var result = await _signInManager.CheckPasswordSignInAsync(user, request.Password, lockoutOnFailure: true);
 
             if (!result.Succeeded)
             {
-                return Unauthorized(new { message = "Неверная почта или пароль" });
+                return Unauthorized(new { message = "РќРµРІРµСЂРЅР°СЏ РїРѕС‡С‚Р° РёР»Рё РїР°СЂРѕР»СЊ" });
             }
             var accessToken = _tokenService.GenerateAccessToken(user);
             var refreshTokenString = _tokenService.GenerateRefreshToken();
@@ -87,7 +87,7 @@ namespace CSharp_teacher.Controllers
             Response.Cookies.Append("refreshToken", refreshTokenString, cookieOptions);
             return Ok(new
             {
-                message = "Успешный вход",
+                message = "РЈСЃРїРµС€РЅС‹Р№ РІС…РѕРґ",
                 accessToken = accessToken,
             });
         }
