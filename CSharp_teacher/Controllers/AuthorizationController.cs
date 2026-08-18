@@ -6,6 +6,7 @@ using CSharp_teacher.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace CSharp_teacher.Controllers
 {
@@ -16,7 +17,7 @@ namespace CSharp_teacher.Controllers
         private readonly UserManager<User> _userManager;
         private readonly SignInManager<User> _signInManager;
         private readonly TokenService _tokenService;
-        private readonly AppDbContext _appDbContext;
+        private readonly AppDbContext _context;
         private readonly IConfiguration _configuration;
         public AuthorizationController(UserManager<User> userManager,
                                         SignInManager<User> signInManager,
@@ -28,7 +29,7 @@ namespace CSharp_teacher.Controllers
             _signInManager = signInManager;
             _tokenService = tokenService;
             _configuration = configuration;
-            _appDbContext = appDbContext;
+            _context = appDbContext;
         }
 
         [HttpPost("register")]
@@ -45,23 +46,53 @@ namespace CSharp_teacher.Controllers
             {
                 return BadRequest(result.Errors);
             }
+            var accessToken = _tokenService.GenerateAccessToken(user);
+            var refreshTokenString = _tokenService.GenerateRefreshToken();
+            var refreshTokenDays = int.Parse(_configuration["JwtSettings:RefreshTokenExpirationDays"]!);
 
-            return Ok(new { message = "Пользователь успешно зарегистрирован!" });
+            var refreshToken = new RefreshToken
+            {
+                Token = refreshTokenString,
+                UserId = user.Id,
+                CreatedAt = DateTime.UtcNow,
+                ExpiresAt = DateTime.UtcNow.AddDays(refreshTokenDays),
+                IsRevoked = false,
+            };
+            _context.RefreshTokens.Add(refreshToken);
+            await _context.SaveChangesAsync();
+            var cookieOptions = new CookieOptions
+            {
+                HttpOnly = true,
+                Secure = true,
+                SameSite = SameSiteMode.Strict,
+                Expires = DateTime.UtcNow.AddDays(refreshTokenDays),
+            };
+            Response.Cookies.Append("refreshToken", refreshTokenString, cookieOptions);
+            return Ok(new
+            {
+                message = "Успешная регистрация",
+                accessToken = accessToken,
+            });
         }
 
         [HttpPost("login")]
         public async Task<IActionResult> Login([FromBody] AuthorizationRequest request)
         {
-            var user = await _userManager.FindByEmailAsync(request.Email);
+            var user = await _userManager.FindByNameAsync(request.Login);
             if (user == null)
             {
-                return Unauthorized(new { message = "Неверная почта или пароль" });
+                return Unauthorized(new { message = "Неверный логин или пароль" });
             }
             var result = await _signInManager.CheckPasswordSignInAsync(user, request.Password, lockoutOnFailure: true);
 
+            if (result.IsLockedOut)
+            {
+                return StatusCode(403, new { message = "Аккаунт временно заблокирован из-за 5 неудачных попыток. Попробуйте через 5 минут." });
+            }
+
             if (!result.Succeeded)
             {
-                return Unauthorized(new { message = "Неверная почта или пароль" });
+                return Unauthorized(new { message = "Неверный логин или пароль" });
             }
             var accessToken = _tokenService.GenerateAccessToken(user);
             var refreshTokenString = _tokenService.GenerateRefreshToken();
@@ -69,14 +100,14 @@ namespace CSharp_teacher.Controllers
 
             var refreshToken = new RefreshToken
             {
-                Token = accessToken,
+                Token = refreshTokenString,
                 UserId = user.Id,
                 CreatedAt = DateTime.UtcNow,
                 ExpiresAt = DateTime.UtcNow.AddDays(refreshTokenDays),
                 IsRevoked = false,
             };
-            _appDbContext.RefreshTokens.Add(refreshToken);
-            await _appDbContext.SaveChangesAsync();
+            _context.RefreshTokens.Add(refreshToken);
+            await _context.SaveChangesAsync();
             var cookieOptions = new CookieOptions
             {
                 HttpOnly = true,
@@ -92,11 +123,31 @@ namespace CSharp_teacher.Controllers
             });
         }
 
+        [HttpPost("logout")]
+        public async Task<IActionResult> LogOut()
+        {
+            if (!Request.Cookies.TryGetValue("refreshToken", out var refreshTokenString))
+            {
+                return Ok(new { message = "Вы уже вышли из системы"});
+            }
+
+            var existingToken = await _context.RefreshTokens.FirstOrDefaultAsync(rt => rt.Token == refreshTokenString);
+
+            if (existingToken != null)
+            {
+                existingToken.IsRevoked = true;
+                existingToken.RevokedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+            }
+            Response.Cookies.Delete("refreshToken");
+            return Ok(new { message = "Вы успешно вышли из системы" });
+        }
+
         [Authorize]
-        [HttpPost]
+        [HttpGet("test")]
         public IActionResult Test()
         {
-            return Ok(new { message = "Ok" });
+            return Ok();
         }
     }
 }
