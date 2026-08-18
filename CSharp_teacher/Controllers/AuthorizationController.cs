@@ -85,6 +85,11 @@ namespace CSharp_teacher.Controllers
             }
             var result = await _signInManager.CheckPasswordSignInAsync(user, request.Password, lockoutOnFailure: true);
 
+            if (result.IsLockedOut)
+            {
+                return StatusCode(403, new { message = "Аккаунт временно заблокирован из-за 5 неудачных попыток. Попробуйте через 5 минут." });
+            }
+
             if (!result.Succeeded)
             {
                 return Unauthorized(new { message = "Неверный логин или пароль" });
