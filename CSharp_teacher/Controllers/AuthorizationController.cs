@@ -46,23 +46,48 @@ namespace CSharp_teacher.Controllers
             {
                 return BadRequest(result.Errors);
             }
+            var accessToken = _tokenService.GenerateAccessToken(user);
+            var refreshTokenString = _tokenService.GenerateRefreshToken();
+            var refreshTokenDays = int.Parse(_configuration["JwtSettings:RefreshTokenExpirationDays"]!);
 
-            return Ok(new { message = "Пользователь успешно зарегистрирован!" });
+            var refreshToken = new RefreshToken
+            {
+                Token = refreshTokenString,
+                UserId = user.Id,
+                CreatedAt = DateTime.UtcNow,
+                ExpiresAt = DateTime.UtcNow.AddDays(refreshTokenDays),
+                IsRevoked = false,
+            };
+            _context.RefreshTokens.Add(refreshToken);
+            await _context.SaveChangesAsync();
+            var cookieOptions = new CookieOptions
+            {
+                HttpOnly = true,
+                Secure = true,
+                SameSite = SameSiteMode.Strict,
+                Expires = DateTime.UtcNow.AddDays(refreshTokenDays),
+            };
+            Response.Cookies.Append("refreshToken", refreshTokenString, cookieOptions);
+            return Ok(new
+            {
+                message = "Успешная регистрация",
+                accessToken = accessToken,
+            });
         }
 
         [HttpPost("login")]
         public async Task<IActionResult> Login([FromBody] AuthorizationRequest request)
         {
-            var user = await _userManager.FindByEmailAsync(request.Email);
+            var user = await _userManager.FindByNameAsync(request.Login);
             if (user == null)
             {
-                return Unauthorized(new { message = "Неверная почта или пароль" });
+                return Unauthorized(new { message = "Неверный логин или пароль" });
             }
             var result = await _signInManager.CheckPasswordSignInAsync(user, request.Password, lockoutOnFailure: true);
 
             if (!result.Succeeded)
             {
-                return Unauthorized(new { message = "Неверная почта или пароль" });
+                return Unauthorized(new { message = "Неверный логин или пароль" });
             }
             var accessToken = _tokenService.GenerateAccessToken(user);
             var refreshTokenString = _tokenService.GenerateRefreshToken();
@@ -101,9 +126,7 @@ namespace CSharp_teacher.Controllers
                 return Ok(new { message = "Вы уже вышли из системы"});
             }
 
-            var existingToken = await _context.RefreshTokens
-                    .Include(rt => rt.User)
-                    .FirstOrDefaultAsync(rt => rt.Token == refreshTokenString);
+            var existingToken = await _context.RefreshTokens.FirstOrDefaultAsync(rt => rt.Token == refreshTokenString);
 
             if (existingToken != null)
             {
